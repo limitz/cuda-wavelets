@@ -1,5 +1,7 @@
 #include <image.h>
 
+Image::Defaults Image::Default;
+
 // Lab color space
 __constant__ __device__ float Lab_M[9];
 __constant__ __device__ float Lab_Mi[9];
@@ -194,9 +196,9 @@ void f_cielab_to_srgb(float4* out, size_t pitch_out, float4* in, size_t pitch_in
         );
         View<float4>(out, pitch_out, x, y) = 
 		make_float4(
-			clamp(RGB.x*255.0f, 0.0f, 255.0f), 
-			clamp(RGB.y*255.0f, 0.0f, 255.0f),
-			clamp(RGB.z*255.0f, 0.0f, 255.0f),
+			clamp(RGB.x, 0.0f, 1.0f), 
+			clamp(RGB.y, 0.0f, 1.0f),
+			clamp(RGB.z, 0.0f, 1.0f),
 			Lab.w
 		);
 }
@@ -220,19 +222,6 @@ Image::~Image()
 	if (_filename) free(_filename);
 	if (mem.host.data) cudaFreeHost(mem.host.data);
 	if (mem.device.data) cudaFree(mem.device.data);
-}
-
-Image::Image()
-{
-	_filename = nullptr;
-	mem.host.data = nullptr;
-	mem.device.data = nullptr;
-	filename = nullptr;
-	width = 0;
-	height = 0;
-	mem.host.pitch = 0;
-	mem.device.pitch = 0;
-	channels = 0;
 }
 
 void Image::toHost(cudaStream_t stream)
@@ -262,6 +251,7 @@ void Image::toDevice(cudaStream_t stream)
 
 void Image::convert(ColorSpace cs, cudaStream_t stream)
 {
+	if (cs == ColorSpace::Default) cs = Image::Default.colorSpace;
 	setup_cielab(stream);
 	
 	dim3 blockSize = { 16, 16 };
@@ -339,24 +329,23 @@ void Image::printInfo()
 	fflush(stdout);
 }
 
-Image* Image::create(size_t width, size_t height, size_t channels)
+void Image::alloc(size_t w, size_t h, size_t c)
 {
 	int rc;
-	auto result = new Image();
-	
-	result->width = width;
-	result->height = height;
-	result->channels = channels;
+	if (mem.host.data) cudaFreeHost(mem.host.data);
+	if (mem.device.data) cudaFree(mem.device.data);
 
-	result->mem.host.pitch = width * sizeof(float4);
-	rc = cudaMallocHost(&result->mem.host.data, result->mem.host.pitch * height);
+	width = w;
+	height = h;
+	channels = c;
+
+	mem.host.pitch = width * sizeof(float4);
+	rc = cudaMallocHost(&mem.host.data, mem.host.pitch * height);
 	if (cudaSuccess != rc) throw "Unable to allocate host memory for image";
 
-	rc = cudaMallocPitch(&result->mem.device.data, &result->mem.device.pitch, 
+	rc = cudaMallocPitch(&mem.device.data, &mem.device.pitch, 
 			width * sizeof(float4), height);
 	if (cudaSuccess != rc) throw "Unable to allocate device memory for image";
-	
-	return result;
 }
 
 void Image::loadPPM()
@@ -400,29 +389,29 @@ void Image::loadPPM()
 		}
 	}
 	fclose(f);
+	toDevice();
 }
 
 void Image::loadPGM()
 {
+	throw "Not implemented yet";
 }
 
 void Image::loadJPG()
 {
+	throw "Not implemented yet";
 }
 
-Image* Image::load(const char* filename)
+void Image::load(const char* path)
 {
-	auto result = new Image();
-	result->filename = result->_filename = strdup(filename);
+	filename = _filename = strdup(path);
 
 	const char* extension = strrstr(filename, ".");
 
-	if (!strcmp(extension, ".jpeg")) result->loadJPG();
-	if (!strcmp(extension, ".jpg"))  result->loadJPG();
-	if (!strcmp(extension, ".ppm"))  result->loadPPM();
-	if (!strcmp(extension, ".pgm"))  result->loadPGM();
-
-	return result;
+	if (!strcmp(extension, ".jpeg")) loadJPG();
+	if (!strcmp(extension, ".jpg"))  loadJPG();
+	if (!strcmp(extension, ".ppm"))  loadPPM();
+	if (!strcmp(extension, ".pgm"))  loadPGM();
 }
 
 float Image::psnr(const Image* ref)

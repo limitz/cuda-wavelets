@@ -12,51 +12,110 @@
 #endif
 #include <jpeglib.h>
 
+enum ColorSpace
+{
+	Default,
+	Device,
+	Grayscale,
+	sRGB,
+	CIELab
+};
+
 class Image
 {
 public:
-	enum ColorSpace
-	{
-		Device,
-		Grayscale,
-		sRGB,
-		CIELab
-	};
-
-	size_t width, height, channels;
-	const char* filename;
+	size_t width = 0, height = 0, channels = 0;
+	const char* filename = nullptr;
 	ColorSpace colorSpace = ColorSpace::Device;
+	cudaStream_t stream = NULL;
+
+	static Image like(const Image& img)
+	{
+		Image result(img.colorSpace, img.width, img.height, img.channels);
+		result.stream = img.stream;
+		return result;
+	}
 
 	struct
 	{
 		struct
 		{
-			float4* data;
-			size_t pitch;
+			float4* data = nullptr;
+			size_t pitch = 0;
 		} host, device;
 	} mem;
 
+	static struct Defaults
+	{
+		ColorSpace colorSpace;
+		size_t channels = 3;
+		size_t width = 1920;
+		size_t height = 1080;
+		cudaStream_t stream = NULL;
+	} Default;
+
+	Image()
+	{
+		colorSpace = Default.colorSpace;
+		stream = Default.stream;
+		alloc(Default.width, Default.height, Default.channels);
+	}
+	Image(ColorSpace cs)
+	{
+		colorSpace = cs == ColorSpace::Default ? Default.colorSpace : cs;
+		if (colorSpace == ColorSpace::Grayscale) channels = 1;
+		else channels = 3;
+
+		stream = Default.stream;
+		alloc(Default.width, Default.height, Default.channels);
+	}
+
+	Image(size_t width, size_t height)
+	{
+		colorSpace = Default.colorSpace;
+		stream = Default.stream;
+		alloc(width, height, Default.channels);
+	}
+
+	Image(ColorSpace cs, size_t width, size_t height, size_t channels = 0)
+	{
+		colorSpace = cs == ColorSpace::Default ? Default.colorSpace : cs;
+		stream = Default.stream;
+		alloc(width, height, channels <= 0 ? Default.channels : channels);
+	}
+
+	Image(const char* path, ColorSpace cs = ColorSpace::Default)
+	{
+		colorSpace = cs == ColorSpace::Default ? Default.colorSpace : cs;
+		stream = Default.stream;
+		load(path);
+	}
+
 	~Image();
 
-	static Image* create(size_t width, size_t height, size_t channels = 0);
-	static Image* load(const char* filename = nullptr);
-	static Image* save(const char* filename = nullptr);
+	void alloc(size_t width, size_t height, size_t channels);
+	void synchronize(cudaStream_t s = NULL) { cudaStreamSynchronize(s ? s : stream); }
 
-	void toDevice(cudaStream_t stream);
-	void toHost(cudaStream_t stream);
+	void load(const char* filename = nullptr);
+	void save(const char* filename = nullptr);
+
+	void toDevice() { toDevice(stream); }
+	void toDevice(cudaStream_t s);
+
+	void toHost() { toHost(stream); }
+	void toHost(cudaStream_t s);
 	
-	void convert(ColorSpace cs, cudaStream_t stream);
+	void convert(ColorSpace cs) { convert(cs, stream);}
+	void convert(ColorSpace cs, cudaStream_t s);
 	void printInfo();
 
 	float psnr(const Image* reference);
 
 private:
-	Image();
-
 	void loadPPM();
 	void loadPGM();
 	void loadJPG();
-	char* _filename;
+	char* _filename = nullptr;
 
 };
 

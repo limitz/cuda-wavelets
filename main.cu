@@ -1,6 +1,7 @@
 #include <gpu.h>
 #include <image.h>
 #include <display.h>
+#include <wavelet.h>
 
 #define ESCAPE 27
 
@@ -18,16 +19,25 @@ int main(int /*argc*/, char** /*argv*/)
 		// SETUP DISPLAY
 		CudaDisplay display("Wavelets", 1920, 1080); 
 
-		Image* img = Image::load("kodak.ppm");
-		img->toDevice(stream);
-		//img->convert(Image::ColorSpace::Grayscale, stream);
-		img->convert(Image::ColorSpace::sRGB, stream);
-		//img->convert(Image::ColorSpace::Device, stream);
-		img->printInfo();
+		Image::Default.stream = stream;
+		Image::Default.width = 1920;
+		Image::Default.height = 1080;
+		Image::Default.channels = 3;
+		Image::Default.colorSpace = ColorSpace::Device;
 
+		Image testImage("kodak.ppm");
+		testImage.width = Image::Default.width;
+		testImage.height = Image::Default.height;
+
+		Image transformed(ColorSpace::Default, Image::Default.width, Image::Default.height, Image::Default.channels);
+
+		WaveletTransform2D wt;
+		wt.source = &testImage;
+		wt.destination = &transformed;
+		wt.run(stream);
 		while (true)
 		{
-			display.render(img);
+			display.render(wt.destination);
 			
 			while (int e = display.events())
 			{
