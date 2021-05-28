@@ -20,12 +20,12 @@ int main(int /*argc*/, char** /*argv*/)
 		CudaDisplay display("Wavelets", 1920, 1080); 
 
 		Image::Default.stream = stream;
-		Image::Default.width = 1920;
-		Image::Default.height = 1080;
+		Image::Default.width = 1024;
+		Image::Default.height = 1024;
 		Image::Default.channels = 3;
 		Image::Default.colorSpace = ColorSpace::Device;
 
-		Image testImage("kodak.ppm");
+		Image testImage("castle.ppm");
 		testImage.width = Image::Default.width;
 		testImage.height = Image::Default.height;
 
