@@ -86,7 +86,7 @@ __global__ void f_decompose_h(float4* out, const size_t pitch_out, float4* in, c
         int y = (blockIdx.y * blockDim.y + threadIdx.y);
         if (x >= width || y >= height) return;
 
-	auto s = View2DSym<float4>(in, pitch_in, x-(len-1)/2, y, width, height);
+	auto s = View2DSym<float4>(in, pitch_in, x, y, width, height);
 	float4 A = make_float4(0);
 	float4 D = make_float4(0);
 
@@ -128,7 +128,7 @@ __global__ void f_reconstruct_h(float4* out, const size_t pitch_out, float4* in,
         int y = (blockIdx.y * blockDim.y + threadIdx.y);
         if (x >= width || y >= height) return;
 
-	auto s = View2DSym<float4>(in, pitch_in, (x>>1) - ((len-1)/2), y, width, height);
+	auto s = View2DSym<float4>(in, pitch_in, x>>1, y, width, height);
 	float4 A = make_float4(0);
 	float4 D = make_float4(0);
 	#pragma unroll
@@ -149,7 +149,7 @@ __global__ void f_reconstruct_v(float4* out, const size_t pitch_out, float4* in,
 	int y = (blockIdx.y * blockDim.y + threadIdx.y)*2;
 	if (x >= width || y >= height) return;
 
-	auto s = View2DSym<float4>(in, pitch_in, x, (y>>1) - ((len-1)/2), width, height);
+	auto s = View2DSym<float4>(in, pitch_in, x, y>>1, width, height);
 	float4 A = make_float4(0);
 	float4 D = make_float4(0);
 	#pragma unroll
@@ -191,26 +191,25 @@ void WaveletTransform2D::run(cudaStream_t stream)
 	int w = (int)source->width;
 	int h = (int)source->height;
 
-	size_t i = 0;
-	//for (size_t i = 0; i < levels; i++)
+	for (int i = 0; i < levels; i++)
 	{
 		Image* src = i ? destination : source;
 		Image* sub = intermediate1;
 		Image* dst = destination;
 
 		dim3 gridSizeH = {
-			1+((w>>1) + blockSize.x-1) / blockSize.x, 
-			1+(h + blockSize.y - 1) / blockSize.y
+			((w>>(i+1)) + blockSize.x-1) / blockSize.x, 
+			(h + blockSize.y - 1) / blockSize.y
 		};
 		dim3 gridSizeV = {
 			1+(w + blockSize.x - 1) / blockSize.x, 
-			1+((h>>1) + blockSize.y-1) / blockSize.y
+			1+((h>>(i+1)) + blockSize.y-1) / blockSize.y
 		};
 		
 		f_decompose_h <<< gridSizeH, blockSize, 0, stream >>> (
 			sub->mem.device.data, sub->mem.device.pitch,
 			src->mem.device.data, src->mem.device.pitch,
-			w, h,
+			w>>i, h>>i,
 			wavelet->decompose.H.device, 
 			wavelet->decompose.G.device, 
 			wavelet->length);
@@ -218,15 +217,30 @@ void WaveletTransform2D::run(cudaStream_t stream)
 		f_decompose_v <<< gridSizeV, blockSize, 0, stream >>> (
 			dst->mem.device.data, dst->mem.device.pitch,
 			sub->mem.device.data, sub->mem.device.pitch,
-			w, h,
+			w>>i, h>>i,
 			wavelet->decompose.H.device, 
 			wavelet->decompose.G.device, 
 			wavelet->length);
-	
+	}
+	for (int i=levels-1; i>=0; i--)
+	{
+		Image* src = i != (levels-1) ? destination : destination; //source;
+		Image* sub = intermediate1;
+		Image* dst = destination;
+
+		dim3 gridSizeH = {
+			((w>>(i+1)) + blockSize.x-1) / blockSize.x, 
+			(h + blockSize.y - 1) / blockSize.y
+		};
+		dim3 gridSizeV = {
+			(w + blockSize.x - 1) / blockSize.x, 
+			((h>>(i+1)) + blockSize.y-1) / blockSize.y
+		};
+		
 		f_reconstruct_v <<< gridSizeV, blockSize, 0, stream >>> (
 			sub->mem.device.data, sub->mem.device.pitch,
-			dst->mem.device.data, dst->mem.device.pitch,
-			w, h,
+			src->mem.device.data, src->mem.device.pitch,
+			w>>i, h>>i,
 			wavelet->reconstruct.H.device, 
 			wavelet->reconstruct.G.device,
 			wavelet->length);
@@ -234,11 +248,9 @@ void WaveletTransform2D::run(cudaStream_t stream)
 		f_reconstruct_h <<< gridSizeH, blockSize, 0, stream >>> (
 			dst->mem.device.data, dst->mem.device.pitch,
 			sub->mem.device.data, sub->mem.device.pitch,
-			w, h,
+			w>>i, h>>i,
 			wavelet->reconstruct.H.device, 
 			wavelet->reconstruct.G.device,
 			wavelet->length);
-		w >>= 1;
-		h >>= 1;
 	}
 }

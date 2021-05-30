@@ -33,8 +33,8 @@ int main(int /*argc*/, char** /*argv*/)
 		Image transformed(ColorSpace::Default, Image::Default.width, Image::Default.height, Image::Default.channels);
 
 		WaveletTransform2D wt;
-		wt.wavelet = new Wavelet("db2");
-		wt.levels = 4;
+		wt.wavelet = new Wavelet("db1");
+		wt.levels = 2;
 		wt.source = &testImage;
 		wt.destination = &transformed;
 		wt.run(stream);
