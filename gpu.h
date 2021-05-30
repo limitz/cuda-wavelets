@@ -28,7 +28,7 @@ public:
 	int max_x, max_y, offset_x, offset_y;
 	
 	__device__ __host__
-	View2DSym(void* p, size_t ptr_pitch, int offsetx, int offsety, int maxx, int maxy)
+	View2DSym(void* p, const size_t ptr_pitch, const int offsetx, const int offsety, const int maxx, const int maxy)
 	{
 		ptr = p;
 		pitch = ptr_pitch;

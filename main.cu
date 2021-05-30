@@ -11,7 +11,8 @@ int main(int /*argc*/, char** /*argv*/)
 	try 
 	{
 		selectGPU();
-		
+
+	
 		cudaStream_t stream = 0;
 		rc = cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
 		if (cudaSuccess != rc) throw "Unable to create CUDA stream";
@@ -32,13 +33,29 @@ int main(int /*argc*/, char** /*argv*/)
 		Image transformed(ColorSpace::Default, Image::Default.width, Image::Default.height, Image::Default.channels);
 
 		WaveletTransform2D wt;
+		wt.wavelet = new Wavelet("db2");
+		wt.levels = 4;
 		wt.source = &testImage;
 		wt.destination = &transformed;
 		wt.run(stream);
+		
+		for (int i=0; i<0; i++)
+		{
+			wt.source = &transformed;
+			wt.destination = &testImage;
+			wt.run(stream);
+		
+			wt.source = &testImage;
+			wt.destination = &transformed;
+			wt.run(stream);
+		}
 		while (true)
 		{
 			display.render(wt.destination);
+//			display.render(wt.intermediate1);
 			
+			//display.render(&testImage);
+
 			while (int e = display.events())
 			{
 				switch (e)
