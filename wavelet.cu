@@ -118,8 +118,8 @@ __global__ void f_decompose_v(float4* out, const size_t pitch_out, float4* in, c
 		A += v * H[i];
 		D += v * G[i];
 	}
-	View<float4>(out, pitch_out, x, y>>1) = A;
-	View<float4>(out, pitch_out, x, (y+height)>>1) = D;
+	View<float4>(out, pitch_out, x, y>>1) = A * rsqrtf(2);
+	View<float4>(out, pitch_out, x, (y+height)>>1) = D * rsqrtf(2);
 }
 
 __global__ void f_reconstruct_h(float4* out, const size_t pitch_out, float4* in, const size_t pitch_in, const size_t width, const size_t height, const float* H, const float* G, const size_t len)
@@ -141,6 +141,27 @@ __global__ void f_reconstruct_h(float4* out, const size_t pitch_out, float4* in,
 
 	View<float4>(out, pitch_out, x, y) = A * sqrtf(2);
 	View<float4>(out, pitch_out, x+1, y) = D * sqrtf(2);
+}
+
+__global__ void f_reconstruct_v(float4* out, const size_t pitch_out, float4* in, const size_t pitch_in, const size_t width, const size_t height, const float* H, const float* G, const size_t len)
+{
+	int x = (blockIdx.x * blockDim.x + threadIdx.x);
+	int y = (blockIdx.y * blockDim.y + threadIdx.y)*2;
+	if (x >= width || y >= height) return;
+
+	auto s = View2DSym<float4>(in, pitch_in, x, (y>>1) - ((len-1)/2), width, height);
+	float4 A = make_float4(0);
+	float4 D = make_float4(0);
+	#pragma unroll
+	for (size_t i = 0; i < len; i++) 
+	{
+		auto v = s(0, (i>>1) + (i%2) * (height>>1));
+		A += v * H[i];
+		D += v * G[i];
+	}
+
+	View<float4>(out, pitch_out, x, y) = A * sqrtf(2);
+	View<float4>(out, pitch_out, x, y+1) = D * sqrtf(2);
 }
 
 __global__
@@ -193,7 +214,23 @@ void WaveletTransform2D::run(cudaStream_t stream)
 			wavelet->decompose.H.device, 
 			wavelet->decompose.G.device, 
 			wavelet->length);
+		
+		f_decompose_v <<< gridSizeV, blockSize, 0, stream >>> (
+			dst->mem.device.data, dst->mem.device.pitch,
+			sub->mem.device.data, sub->mem.device.pitch,
+			w, h,
+			wavelet->decompose.H.device, 
+			wavelet->decompose.G.device, 
+			wavelet->length);
 	
+		f_reconstruct_v <<< gridSizeV, blockSize, 0, stream >>> (
+			sub->mem.device.data, sub->mem.device.pitch,
+			dst->mem.device.data, dst->mem.device.pitch,
+			w, h,
+			wavelet->reconstruct.H.device, 
+			wavelet->reconstruct.G.device,
+			wavelet->length);
+		
 		f_reconstruct_h <<< gridSizeH, blockSize, 0, stream >>> (
 			dst->mem.device.data, dst->mem.device.pitch,
 			sub->mem.device.data, sub->mem.device.pitch,
